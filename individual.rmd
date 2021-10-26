@@ -1,0 +1,123 @@
+---
+title: "lab4"
+author: "Ryan McNally"
+date: "10/21/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(tidyr)
+library(dplyr)
+defense <- read_excel('cyclonesFootball2020.xlsx', sheet='Defensive')
+offense <- read_excel('cyclonesFootball2020.xlsx', sheet='Offensive')
+biography <- read_excel('cyclonesFootball2020.xlsx', sheet='Biography')
+str(defense)
+str(offense)
+str(biography)
+```
+
+## Cleaning the Data
+
+## 1.
+```{r}
+defense$Name <- as.factor(defense$Name)
+offense$Name <- as.factor(offense$Name)
+defense$Opponent_Opponent <- as.factor(defense$Opponent_Opponent)
+offense$Opponent_Opponent <- as.factor(offense$Opponent_Opponent)
+```
+
+
+## 2.
+```{r}
+defClean <- defense %>% mutate(across(where(is.character), as.numeric))
+offClean <- offense %>% mutate(across(where(is.character), as.numeric))
+biography$Weight <- as.numeric(biography$Weight)
+```
+
+## 3.
+```{r}
+bioClean <- biography %>% separate(Height, c('feet', 'inches'), "-", convert = TRUE)
+```
+
+## 4.
+```{r}
+offClean <- offClean %>% group_by(Name, Opponent_Opponent) %>% mutate(gameNum = row_number()) %>% ungroup()
+defClean <- defClean %>% group_by(Name, Opponent_Opponent) %>% mutate(gameNum = row_number()) %>% ungroup()
+str(offClean)
+str(defClean)
+str(bioClean)
+```
+
+
+## Tidying and Exploring
+
+## 1. 
+```{r}
+offCleanStat <- offClean %>% pivot_longer(
+  !c('Name','Opponent_Opponent','gameNum'),
+  names_to="stat",
+  values_to="count",
+  values_drop_na = TRUE
+)
+offCleanStat
+```
+
+
+## 2.
+```{r}
+yearStat <- offCleanStat %>% group_by(Name,stat) %>% summarise(overall = sum(count))
+```
+
+
+## 3.
+```{r}
+ggplot(aes(x = overall), data=yearStat) + geom_histogram(bins = 30) + facet_wrap(~stat, scales = "free_x")
+```
+<br /> The passing stats are not very evenly distributed as we only played on QB Brock Purdy. 
+The rushing stats are also not very evenly distributed as Breece Hall had the vast majority of rushing attempts.
+The passing stats are more evenly distributed as multiple WRs and TEs can play at the same time, and there are more WRs and TEs on the team than QBs and RBs.
+
+## 4.
+```{r}
+oVo <- offCleanStat %>% group_by(Opponent_Opponent) %>% 
+  filter(stat=="Receiving_YDS", (Opponent_Opponent=="Oklahoma" & gameNum==2) | Opponent_Opponent=="Oregon") %>% 
+  select(Opponent_Opponent,count, Name)
+oVo <- oVo %>% pivot_wider(names_from = Opponent_Opponent,values_from = count)
+oVo %>% ggplot(aes(x=Oklahoma, y=Oregon))+geom_point() + xlab("Receiving Yards vs. Oklahoma") + ylab("Receiving yards vs. Oregon")
+```
+<br />In general, ISU's receivers did better vs Oklahoma than they did versus Oregon. It is clear to see that the majority of the teams receivers had more yards vs Oklahoma than Oregon. 
+
+## 5.
+```{r}
+bioClean <- bioClean %>% separate(Hometown, c('homeCity', 'homeState'), ",")
+```
+
+
+## 6.
+```{r}
+bioClean %>% count(homeState)
+```
+
+## 7.
+```{r}
+purdy <- offClean %>% filter(Name=="Purdy, Brock") %>% select(Rushing_YDS,Passing_YDS,Opponent_Opponent,gameNum)
+teamRec <- offCleanStat %>% filter(stat=="Receiving_YDS") %>% group_by(Opponent_Opponent,gameNum) %>%
+  summarise(teamreceiving=sum(count))
+teamRus <- offCleanStat %>% filter(stat=="Rushing_YDS") %>% group_by(Opponent_Opponent,gameNum) %>% 
+  summarise(teamrushing=sum(count))
+teamTack <- defClean %>% group_by(Opponent_Opponent,gameNum) %>% summarise(teamtackles=sum(Tackles_Solo))
+teamSack <- defClean %>% group_by(Opponent_Opponent,gameNum) %>% summarise(teamsacks=sum(Tackles_Sack))
+purdyVteam <- purdy %>% inner_join(teamRec, by = c("Opponent_Opponent","gameNum")) %>% 
+  inner_join(teamRus, by = c("Opponent_Opponent","gameNum")) %>% 
+  inner_join(teamTack, by = c("Opponent_Opponent","gameNum")) %>% 
+  inner_join(teamSack, by = c("Opponent_Opponent","gameNum"))
+purdyVteam
+```
+When Purdy's passing yards are higher, the teams rushing yards trend down, especially if the passing yards surpass 300. Higher passing yards also are associated with lower team tackles and sacks. This makes sense intuitively as if the offense is doing well, the defense will have fewer opportunities to be on the field and accumulate stats.
